@@ -1,0 +1,16 @@
+# ROS2 build artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# Build/install directories (never commit these)
+build/
+install/
+log/
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*~

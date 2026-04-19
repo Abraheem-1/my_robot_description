@@ -1,0 +1,229 @@
+<?xml version="1.0" ?>
+<robot name="my_robot" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:include filename="$(find my_robot_description)/urdf/materials.xacro" />
+  <xacro:include filename="$(find my_robot_description)/urdf/my_robot.gazebo" />
+
+  <!--
+    Robot dimensions (all primitives, no meshes):
+      Chassis : 0.20 x 0.15 x 0.06 m  (L x W x H)
+      Wheels  : radius=0.04m, width=0.025m, separated by 0.175m
+      Lidar   : radius=0.035m, height=0.04m, on top of chassis
+      
+    TF chain:
+      map → odom → base_footprint → base_link → left_wheel_1
+                                              → right_wheel_1
+                                              → lidar_1
+  -->
+
+  <!-- ================= BASE FOOTPRINT ================= -->
+  <!-- Virtual link at ground level — required by diff-drive plugin -->
+  <link name="base_footprint"/>
+
+  <joint name="base_link_joint" type="fixed">
+    <parent link="base_footprint"/>
+    <child  link="base_link"/>
+    <!-- Lift chassis so wheels touch the ground:
+         wheel_radius(0.04) - chassis_bottom_to_wheel_hub(0.0) = 0.04m -->
+    <origin xyz="0 0 0.04" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ================= CHASSIS ================= -->
+  <link name="base_link">
+    <inertial>
+      <!-- CoM at geometric center of box -->
+      <origin xyz="0 0 0.03" rpy="0 0 0"/>
+      <mass value="1.5"/>
+      <inertia ixx="0.003262" iyy="0.005450" izz="0.007812"
+               ixy="0.0"      iyz="0.0"      ixz="0.0"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0.03" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.20 0.15 0.06"/>
+      </geometry>
+      <material name="blue">
+        <color rgba="0.2 0.2 0.8 1.0"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.03" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.20 0.15 0.06"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <!-- ================= RIGHT WHEEL ================= -->
+  <!--
+    Placed at y=+0.0875 (right side).
+    Cylinder axis aligned with Y by rotating 90° around X (rpy="1.5708 0 0").
+    All origins are 0 0 0 — joint handles positioning entirely.
+  -->
+  <link name="right_wheel_1">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.1"/>
+      <inertia ixx="0.000045" iyy="0.000080" izz="0.000045"
+               ixy="0.0"      iyz="0.0"      ixz="0.0"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="1.5708 0 0"/>
+      <geometry>
+        <cylinder radius="0.04" length="0.025"/>
+      </geometry>
+      <material name="black">
+        <color rgba="0.1 0.1 0.1 1.0"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="1.5708 0 0"/>
+      <geometry>
+        <cylinder radius="0.04" length="0.025"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <joint name="right_wheel_joint" type="continuous">
+    <!-- y=+0.0875: half chassis width(0.075) + half wheel width(0.0125) -->
+    <origin xyz="0 0.0875 0" rpy="0 0 0"/>
+    <parent link="base_link"/>
+    <child  link="right_wheel_1"/>
+    <axis xyz="0 1 0"/>
+  </joint>
+
+  <!-- ================= LEFT WHEEL ================= -->
+  <link name="left_wheel_1">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.1"/>
+      <inertia ixx="0.000045" iyy="0.000080" izz="0.000045"
+               ixy="0.0"      iyz="0.0"      ixz="0.0"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="1.5708 0 0"/>
+      <geometry>
+        <cylinder radius="0.04" length="0.025"/>
+      </geometry>
+      <material name="black">
+        <color rgba="0.1 0.1 0.1 1.0"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="1.5708 0 0"/>
+      <geometry>
+        <cylinder radius="0.04" length="0.025"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <joint name="left_wheel_joint" type="continuous">
+    <!-- y=-0.0875: mirrored from right side -->
+    <origin xyz="0 -0.0875 0" rpy="0 0 0"/>
+    <parent link="base_link"/>
+    <child  link="left_wheel_1"/>
+    <axis xyz="0 1 0"/>
+  </joint>
+
+  <!-- ================= CASTER WHEEL (rear) ================= -->
+  <!--
+    Passive rear support — no joint motor, just a sphere that rolls freely.
+    Prevents the chassis from tipping backwards.
+  -->
+  <link name="caster_wheel">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.05"/>
+      <inertia ixx="0.000008" iyy="0.000008" izz="0.000008"
+               ixy="0.0"      iyz="0.0"      ixz="0.0"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <sphere radius="0.02"/>
+      </geometry>
+      <material name="grey">
+        <color rgba="0.5 0.5 0.5 1.0"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <sphere radius="0.02"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <joint name="caster_joint" type="fixed">
+    <!-- Rear center, z=-0.02 so sphere bottom touches ground -->
+    <origin xyz="-0.08 0 -0.02" rpy="0 0 0"/>
+    <parent link="base_link"/>
+    <child  link="caster_wheel"/>
+  </joint>
+
+
+  <!-- ================= FRONT CASTER WHEEL ================= -->
+  <link name="front_caster_wheel">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.05"/>
+      <inertia ixx="0.000008" iyy="0.000008" izz="0.000008"
+               ixy="0.0"      iyz="0.0"      ixz="0.0"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <sphere radius="0.02"/>
+      </geometry>
+      <material name="grey">
+        <color rgba="0.5 0.5 0.5 1.0"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <sphere radius="0.02"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <joint name="front_caster_joint" type="fixed">
+    <!-- Front center, z=-0.02 so sphere bottom touches ground -->
+    <origin xyz="0.08 0 -0.02" rpy="0 0 0"/>
+    <parent link="base_link"/>
+    <child  link="front_caster_wheel"/>
+  </joint>
+
+  <!-- ================= LIDAR ================= -->
+  <link name="lidar_1">
+    <inertial>
+      <origin xyz="0 0 0.02" rpy="0 0 0"/>
+      <mass value="0.1"/>
+      <inertia ixx="0.000044" iyy="0.000044" izz="0.000061"
+               ixy="0.0"      iyz="0.0"      ixz="0.0"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0.02" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.035" length="0.04"/>
+      </geometry>
+      <material name="red">
+        <color rgba="0.8 0.1 0.1 1.0"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.02" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.035" length="0.04"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <joint name="lidar_joint" type="fixed">
+    <!-- Sits on top of chassis (z=0.06) at center -->
+    <origin xyz="0 0 0.06" rpy="0 0 0"/>
+    <parent link="base_link"/>
+    <child  link="lidar_1"/>
+  </joint>
+
+</robot>

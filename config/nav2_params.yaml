@@ -1,13 +1,13 @@
 # ============================================================
-#  Nav2 Parameters — my_robot
+#  Nav2 Parameters — my_robot  (FINAL TUNED VERSION)
 #  Frames: map → odom → base_footprint → base_link → lidar_1
 #  LiDAR topic: /scan
-#  Localization: slam_toolbox (replaced amcl)
+#  Localization: slam_toolbox
+#  Controller: Regulated Pure Pursuit
 # ============================================================
 
 
 # ================= LIFECYCLE MANAGER =================
-# manages only Nav2 nodes — slam_toolbox handles its own lifecycle
 lifecycle_manager:
   ros__parameters:
     use_sim_time: True
@@ -48,7 +48,6 @@ planner_server:
 
 
 # ================= CONTROLLER SERVER =================
-# Using Regulated Pure Pursuit controller
 controller_server:
   ros__parameters:
     use_sim_time: True
@@ -69,45 +68,48 @@ controller_server:
     goal_checker_plugins: ["goal_checker"]
     goal_checker:
       plugin: "nav2_controller::SimpleGoalChecker"
-      xy_goal_tolerance: 0.25
-      yaw_goal_tolerance: 0.5
+      xy_goal_tolerance: 0.15
+      yaw_goal_tolerance: 0.4
       stateful: true
 
     FollowPath:
       plugin: "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController"
 
       # ── Speed ────────────────────────────────────────────
-      desired_linear_vel: 0.3
+      desired_linear_vel: 0.25
       max_linear_accel: 2.5
       max_linear_decel: 2.5
 
       # ── Lookahead ────────────────────────────────────────
-      lookahead_dist: 0.8
-      min_lookahead_dist: 0.4
-      max_lookahead_dist: 1.2
+      # Short lookahead = sharp turns, precise path tracking
+      lookahead_dist: 0.25
+      min_lookahead_dist: 0.1
+      max_lookahead_dist: 0.4
       lookahead_time: 1.5
       use_velocity_scaled_lookahead_dist: false
 
       # ── Rotation ─────────────────────────────────────────
-      # Disabled — was causing infinite spinning in place
-      use_rotate_to_heading: false
-      rotate_to_heading_min_angle: 1.57
-      rotate_to_heading_angular_vel: 0.5
+      # Enabled with high threshold — only rotates in place
+      # when significantly misaligned (near goal turns)
+      use_rotate_to_heading: true
+      rotate_to_heading_min_angle: 0.785   # 45° threshold
+      rotate_to_heading_angular_vel: 0.8
       max_angular_accel: 1.5
 
       # ── Approach ─────────────────────────────────────────
-      min_approach_linear_velocity: 0.05
-      approach_velocity_scaling_dist: 0.6
+      # Slows down well before goal to avoid overshooting
+      min_approach_linear_velocity: 0.03
+      approach_velocity_scaling_dist: 1.2
 
       # ── Collision detection ──────────────────────────────
       use_collision_detection: true
       max_allowed_time_to_collision_up_to_goal: 1.0
 
-      # ── Scaling ──────────────────────────────────────────
+      # ── Velocity scaling ─────────────────────────────────
       use_regulated_linear_velocity_scaling: true
-      use_cost_regulated_linear_velocity_scaling: false
+      use_cost_regulated_linear_velocity_scaling: true
       regulated_linear_scaling_min_radius: 0.9
-      regulated_linear_scaling_min_speed: 0.25
+      regulated_linear_scaling_min_speed: 0.1
 
       # ── Other ────────────────────────────────────────────
       use_fixed_curvature_lookahead: true
@@ -184,7 +186,7 @@ local_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
-        inflation_radius: 0.30
+        inflation_radius: 0.45
       always_send_full_costmap: True
 
 
@@ -221,5 +223,5 @@ global_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
-        inflation_radius: 0.30
+        inflation_radius: 0.45
       always_send_full_costmap: True

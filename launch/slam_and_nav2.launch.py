@@ -1,18 +1,19 @@
 # ============================================================
-#  SLAM + Nav2 Launch File — my_robot (FINAL FIX)
+#  SLAM + Nav2 Launch File — my_robot
 #
-#  Root cause of crash: nav2_bringup's bringup_launch.py
-#  internally does eval() on the 'slam' argument and chokes
-#  on Python bool vs string. Fix: don't use bringup_launch.py
-#  at all — launch Nav2 nodes directly instead.
+#  Modes:
+#  use_slam:=true  → SLAM mapping mode (async_slam_toolbox_node)
+#  use_slam:=false → Localization mode (localization_slam_toolbox_node)
+#
+#  Key change: replaced map_server + amcl with slam_toolbox
+#  localization mode — much more robust for small robots.
 #
 #  Usage:
-#    # SLAM mapping (build a new map):
+#    # SLAM mapping:
 #    ros2 launch my_robot_description slam_and_nav2.launch.py
 #
 #    # Navigation on saved map:
-#    ros2 launch my_robot_description slam_and_nav2.launch.py \
-#        use_slam:=false map:=/home/user/my_map.yaml
+#    ros2 launch my_robot_description slam_and_nav2.launch.py use_slam:=false
 # ============================================================
 
 from launch import LaunchDescription
@@ -32,21 +33,16 @@ import os
 
 def generate_launch_description():
 
-    pkg_path     = get_package_share_directory('my_robot_description')
-    nav2_params  = os.path.join(pkg_path, 'config', 'nav2_params.yaml')
-    slam_params  = os.path.join(pkg_path, 'config', 'slam_params.yaml')
-    rviz_config  = os.path.join(pkg_path, 'config', 'display.rviz')
+    pkg_path    = get_package_share_directory('my_robot_description')
+    nav2_params = os.path.join(pkg_path, 'config', 'nav2_params.yaml')
+    slam_params = os.path.join(pkg_path, 'config', 'slam_params.yaml')
+    rviz_config = os.path.join(pkg_path, 'config', 'display.rviz')
 
     # ================= LAUNCH ARGUMENTS =================
     use_slam_arg = DeclareLaunchArgument(
         'use_slam',
         default_value='true',
-        description='true = SLAM mapping | false = Nav2 on saved map'
-    )
-    map_arg = DeclareLaunchArgument(
-        'map',
-        default_value=os.path.join(pkg_path, 'maps', 'my_map.yaml'),
-        description='Path to saved map yaml (only used when use_slam:=false)'
+        description='true = SLAM mapping | false = localization on saved map'
     )
     use_rviz_arg = DeclareLaunchArgument(
         'use_rviz',
@@ -55,21 +51,19 @@ def generate_launch_description():
     )
 
     use_slam = LaunchConfiguration('use_slam')
-    map_file = LaunchConfiguration('map')
     use_rviz = LaunchConfiguration('use_rviz')
 
     # ================= 1. GAZEBO + ROBOT =================
-    # Reuses gazebo.launch.py (robot_state_publisher + spawn)
     gazebo_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(pkg_path, 'launch', 'gazebo.launch.py')
         )
     )
 
-    # ================= 2. SLAM TOOLBOX =================
+    # ================= 2. SLAM TOOLBOX — MAPPING MODE =================
     # Only when use_slam:=true
     # Delayed 5s so /scan and /odom are publishing
-    slam_node = TimerAction(
+    slam_mapping = TimerAction(
         period=5.0,
         actions=[
             Node(
@@ -80,44 +74,47 @@ def generate_launch_description():
                 output='screen',
                 parameters=[
                     slam_params,
-                    {'use_sim_time': True}
+                    {'use_sim_time': True,
+                     'mode': 'mapping'}
                 ],
-            )
+            ),
         ]
     )
 
-    # ================= 3. MAP SERVER =================
-    # Only when use_slam:=false (navigation on saved map)
-    # slam_toolbox already publishes /map during SLAM mode
-    map_server_node = TimerAction(
+    # ================= 3. SLAM TOOLBOX — LOCALIZATION MODE =================
+    # Only when use_slam:=false
+    # Replaces map_server + amcl entirely.
+    # slam_toolbox localization is more robust than amcl for small robots:
+    #   - Updates continuously regardless of robot motion
+    #   - Uses full scan matching not just particle filter
+    #   - No need to set initial pose manually
+    slam_localization = TimerAction(
         period=5.0,
         actions=[
-            LifecycleNode(
+            Node(
                 condition=UnlessCondition(use_slam),
-                package='nav2_map_server',
-                executable='map_server',
-                name='map_server',
-                namespace='',
+                package='slam_toolbox',
+                executable='localization_slam_toolbox_node',
+                name='slam_toolbox',
                 output='screen',
                 parameters=[
-                    nav2_params,
-                    {'yaml_filename': map_file},
-                    {'use_sim_time': True}
+                    slam_params,
+                    {'use_sim_time': True,
+                     'mode': 'localization'},
                 ],
-            )
+            ),
         ]
     )
 
     # ================= 4. NAV2 NODES =================
-    # Launched directly — no bringup_launch.py wrapper.
-    # Delayed 8s so map frame is available from SLAM or map_server.
-
+    # Delayed 10s — give slam_toolbox localization time to
+    # load the map and establish the map→odom transform
+    # before Nav2 nodes try to use it.
     nav2_nodes = TimerAction(
-        period=8.0,
+        period=10.0,
         actions=[
             GroupAction(actions=[
 
-                # --- Planner (global path) ---
                 LifecycleNode(
                     package='nav2_planner',
                     executable='planner_server',
@@ -126,8 +123,6 @@ def generate_launch_description():
                     output='screen',
                     parameters=[nav2_params, {'use_sim_time': True}],
                 ),
-
-                # --- Controller (local path / cmd_vel) ---
                 LifecycleNode(
                     package='nav2_controller',
                     executable='controller_server',
@@ -137,8 +132,6 @@ def generate_launch_description():
                     parameters=[nav2_params, {'use_sim_time': True}],
                     remappings=[('cmd_vel', 'cmd_vel')],
                 ),
-
-                # --- Behaviors (recovery: spin, backup, wait) ---
                 LifecycleNode(
                     package='nav2_behaviors',
                     executable='behavior_server',
@@ -147,8 +140,6 @@ def generate_launch_description():
                     output='screen',
                     parameters=[nav2_params, {'use_sim_time': True}],
                 ),
-
-                # --- BT Navigator (orchestrates everything) ---
                 LifecycleNode(
                     package='nav2_bt_navigator',
                     executable='bt_navigator',
@@ -157,8 +148,6 @@ def generate_launch_description():
                     output='screen',
                     parameters=[nav2_params, {'use_sim_time': True}],
                 ),
-
-                # --- Waypoint Follower ---
                 LifecycleNode(
                     package='nav2_waypoint_follower',
                     executable='waypoint_follower',
@@ -169,8 +158,8 @@ def generate_launch_description():
                 ),
 
                 # --- Lifecycle Manager ---
-                # Activates all Nav2 lifecycle nodes in order.
-                # This is what actually starts everything running.
+                # Same node list for both modes —
+                # slam_toolbox handles its own lifecycle independently
                 Node(
                     package='nav2_lifecycle_manager',
                     executable='lifecycle_manager',
@@ -194,8 +183,10 @@ def generate_launch_description():
     )
 
     # ================= 5. RVIZ2 =================
+    # Delayed 12s — ensures map is fully loaded before RViz2
+    # subscribes, avoiding the "No map received" issue
     rviz2 = TimerAction(
-        period=6.0,
+        period=12.0,
         actions=[
             Node(
                 condition=IfCondition(use_rviz),
@@ -211,11 +202,10 @@ def generate_launch_description():
 
     return LaunchDescription([
         use_slam_arg,
-        map_arg,
         use_rviz_arg,
-        gazebo_launch,   # t=0s  — Gazebo + robot (spawn at t=3s inside)
-        slam_node,       # t=5s  — SLAM starts after /scan is live
-        map_server_node, # t=5s  — map_server (only if use_slam:=false)
-        rviz2,           # t=6s  — RViz2
-        nav2_nodes,      # t=8s  — all Nav2 nodes + lifecycle manager
+        gazebo_launch,        # t=0s   — Gazebo + robot (spawn at t=3s)
+        slam_mapping,         # t=5s   — SLAM mapping (use_slam:=true only)
+        slam_localization,    # t=5s   — SLAM localization (use_slam:=false only)
+        rviz2,                # t=12s  — RViz2
+        nav2_nodes,           # t=10s  — Nav2 stack
     ])

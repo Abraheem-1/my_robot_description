@@ -1,83 +1,167 @@
 # ============================================================
 #  SLAM Toolbox Parameters — my_robot
-#  
-#  Two modes:
-#  - mapping:      building a new map (use_slam:=true)
-#  - localization: navigating on saved map (use_slam:=false)
 #
-#  The mode is overridden by the launch file automatically.
+#  Two modes controlled by the launch file:
+#  - mapping:      builds a new map while driving around
+#  - localization: localizes on a saved map for navigation
+#
+#  Key advantage over AMCL:
+#  - Updates continuously regardless of robot motion
+#  - Uses full scan matching not just particle filter
+#  - No need to set initial pose manually
 # ============================================================
 
 slam_toolbox:
   ros__parameters:
 
     # ================= SIMULATION =================
-    use_sim_time: true
+    use_sim_time: true             # true = use Gazebo /clock topic
+                                    # false = use real wall clock (for real robot)
 
     # ================= FRAMES =================
-    odom_frame: odom
-    map_frame: map
-    base_frame: base_footprint
-    scan_topic: /scan
+    # These MUST match your URDF and diff-drive plugin exactly.
+    # Any mismatch here will break the TF tree and SLAM will fail.
+    odom_frame: odom               # frame published by diff-drive plugin
+                                    # must match <odometry_frame> in my_robot.gazebo
+    map_frame: map                 # the global fixed frame SLAM creates
+                                    # Nav2 expects this to be called "map"
+    base_frame: base_footprint     # robot's base frame
+                                    # must match <robot_base_frame> in my_robot.gazebo
+    scan_topic: /scan              # LiDAR topic to subscribe to
+                                    # must match the remapping in my_robot.gazebo
 
     # ================= MODE =================
-    # 'mapping'      → build new map
-    # 'localization' → localize on saved map
+    # Controls what slam_toolbox does when launched.
+    # This is overridden by the launch file automatically —
+    # you don't need to change this manually.
+    # 'mapping'      → creates a new map from scratch
+    # 'localization' → loads saved map and localizes on it
     mode: mapping
 
     # ================= LOCALIZATION MAP =================
     # Only used when mode: localization
-    # Points to the saved map (without file extension)
+    # Full path to saved map WITHOUT file extension
+    # (.posegraph and .data files are loaded automatically)
     map_file_name: /home/abraheem/ros2_ws/src/my_robot_description/maps/my_map
-    map_start_at_dock: true    # start localization at map origin (robot spawn point)
+    map_start_at_dock: true        # true = start localization at map origin (0,0)
+                                    # which matches where robot spawns in Gazebo
+                                    # false = use initial pose from map file
 
     # ================= SOLVER =================
+    # The solver optimizes the pose graph to correct accumulated drift.
+    # Ceres is the recommended solver — don't change unless you know what you're doing.
     solver_plugin: solver_plugins::CeresSolver
-    ceres_linear_solver: SPARSE_NORMAL_CHOLESKY
-    ceres_preconditioner: SCHUR_JACOBI
-    ceres_trust_strategy: LEVENBERG_MARQUARDT
-    ceres_dogleg_type: TRADITIONAL_DOGLEG
-    ceres_loss_function: None
+    ceres_linear_solver: SPARSE_NORMAL_CHOLESKY   # good for sparse pose graphs
+                                                    # alternatives: DENSE_QR, SPARSE_SCHUR
+    ceres_preconditioner: SCHUR_JACOBI             # speeds up solver convergence
+    ceres_trust_strategy: LEVENBERG_MARQUARDT      # robust trust region strategy
+                                                    # alternative: DOGLEG
+    ceres_dogleg_type: TRADITIONAL_DOGLEG          # only used if DOGLEG strategy selected
+    ceres_loss_function: None                      # None = standard least squares
+                                                    # alternatives: HUBER, CAUCHY (more robust
+                                                    # to outliers but slower)
 
     # ================= MAP SETTINGS =================
-    resolution: 0.05
-    max_laser_range: 10.0
-    minimum_travel_distance: 0.1    # ← was 0.3, update more frequently
-    minimum_travel_heading: 0.1     # ← was 0.3, update more frequently
-    map_update_interval: 0.3
+    resolution: 0.05               # meters per cell in the occupancy grid map
+                                    # smaller = more detailed map but more memory
+                                    # larger = coarser map but faster
+                                    # must match nav2_params.yaml costmap resolution
+    max_laser_range: 10.0          # meters — maximum LiDAR range to use for mapping
+                                    # must not exceed your LiDAR's actual max range
+                                    # reduce to ignore distant noisy measurements
+    minimum_travel_distance: 0.1   # meters — robot must move this far before
+                                    # processing a new scan for mapping
+                                    # decrease for more frequent updates (more CPU)
+                                    # increase for faster robots
+    minimum_travel_heading: 0.1    # radians — robot must rotate this much before
+                                    # processing a new scan
+                                    # decrease for more frequent updates
+                                    # increase to reduce processing on rotation
+    map_update_interval: 0.3       # seconds — how often to publish the map topic
+                                    # decrease for more frequent RViz2 updates
+                                    # increase to reduce CPU and network load
 
     # ================= SCAN MATCHING =================
-    use_scan_matching: true
-    use_scan_barycenter: true
-    minimum_time_interval: 0.2      # ← was 0.5, faster updates
-    transform_timeout: 0.5          # ← was 0.2, more tolerant
-    tf_buffer_duration: 30.0
-    stack_size_to_use: 40000000
+    # Scan matching aligns incoming LiDAR scans to the existing map
+    # to estimate the robot's precise position.
+    use_scan_matching: true        # true = use scan matching for pose correction
+                                    # false = rely on odometry only (much less accurate)
+    use_scan_barycenter: true      # true = use center of mass of scan points
+                                    # gives more stable matching in sparse environments
+    minimum_time_interval: 0.2     # seconds — minimum time between scan matches
+                                    # decrease for faster updates (more CPU)
+                                    # increase to reduce CPU load
+    transform_timeout: 0.5         # seconds — how long to wait for a TF transform
+                                    # increase if you see TF timeout warnings
+    tf_buffer_duration: 30.0       # seconds — how long to keep TF history
+                                    # increase if you see "extrapolation into past" errors
+    stack_size_to_use: 40000000    # bytes (40MB) — stack size for scan matching thread
+                                    # increase if slam_toolbox crashes on large maps
 
     # ================= LOOP CLOSURE =================
-    do_loop_closing: true
-    loop_search_maximum_distance: 3.0
-    loop_match_minimum_chain_size: 10
-    loop_match_maximum_variance_covariance: 3.0
-    loop_match_minimum_response_coarse: 0.35
-    loop_match_minimum_response_fine: 0.45
+    # Loop closure detects when the robot revisits a previously
+    # mapped location and corrects accumulated drift in the map.
+    do_loop_closing: true          # true = enable loop closure detection
+                                    # false = disable (map will drift over time)
+    loop_search_maximum_distance: 3.0   # meters — how far to search for loop closure
+                                         # candidates from current position
+                                         # increase for larger environments
+                                         # decrease to avoid false loop closures
+    loop_match_minimum_chain_size: 10   # minimum number of poses in a chain before
+                                         # attempting loop closure
+                                         # increase to require more evidence before closing
+    loop_match_maximum_variance_covariance: 3.0  # maximum uncertainty allowed for
+                                                   # a loop closure to be accepted
+                                                   # decrease for stricter acceptance
+    loop_match_minimum_response_coarse: 0.35     # minimum score for coarse loop match
+                                                   # increase to reject weak matches
+                                                   # decrease to accept more candidates
+    loop_match_minimum_response_fine: 0.45       # minimum score for fine loop match
+                                                   # must be higher than coarse score
+                                                   # increase for more precise loop closure
 
-    # ================= CORRELATION =================
-    correlation_search_space_dimension: 0.5
-    correlation_search_space_resolution: 0.01
-    correlation_search_space_smear_deviation: 0.1
+    # ================= CORRELATION PARAMETERS =================
+    # Controls the search space for scan-to-map correlation
+    # during normal (non-loop-closure) scan matching.
+    correlation_search_space_dimension: 0.5   # meters — size of search area
+                                               # increase if robot pose estimate is noisy
+                                               # decrease to speed up matching
+    correlation_search_space_resolution: 0.01 # meters — resolution of search grid
+                                               # smaller = more precise but slower
+    correlation_search_space_smear_deviation: 0.1  # meters — gaussian smearing of
+                                                     # scan points during correlation
+                                                     # increase for noisier sensors
 
     # ================= LOOP CLOSURE CORRELATION =================
-    loop_search_space_dimension: 8.0
-    loop_search_space_resolution: 0.05
-    loop_search_space_smear_deviation: 0.03
+    # Separate (larger) search space used specifically during
+    # loop closure candidate verification.
+    loop_search_space_dimension: 8.0      # meters — much larger than normal correlation
+                                           # because loop closure can be far away
+                                           # increase for larger environments
+    loop_search_space_resolution: 0.05    # meters — coarser than normal for speed
+    loop_search_space_smear_deviation: 0.03  # meters — tighter smearing for precision
 
-    # ================= SCAN MATCHER =================
-    distance_variance_penalty: 0.5
-    angle_variance_penalty: 1.0
-    fine_search_angle_offset: 0.00349
-    coarse_search_angle_offset: 0.349
-    coarse_angle_resolution: 0.0349
-    minimum_angle_penalty: 0.9
-    minimum_distance_penalty: 0.5
-    use_response_expansion: true
+    # ================= SCAN MATCHER PARAMETERS =================
+    # Fine-tuning parameters for the scan matching algorithm.
+    distance_variance_penalty: 0.5    # penalty for large translational corrections
+                                        # increase to prefer smaller position corrections
+                                        # decrease to allow larger corrections
+    angle_variance_penalty: 1.0        # penalty for large rotational corrections
+                                        # increase to prefer smaller angle corrections
+                                        # decrease to allow larger angle corrections
+    fine_search_angle_offset: 0.00349  # radians (0.2°) — angular resolution for
+                                        # fine scan matching search
+                                        # decrease for more precise angle matching
+    coarse_search_angle_offset: 0.349  # radians (20°) — angular search range for
+                                        # coarse scan matching
+                                        # increase if initial heading estimate is poor
+    coarse_angle_resolution: 0.0349    # radians (2°) — angular step size for
+                                        # coarse search
+                                        # decrease for more thorough coarse search
+    minimum_angle_penalty: 0.9         # minimum score multiplier for angle matching
+                                        # decrease to penalize poor angle matches more
+    minimum_distance_penalty: 0.5      # minimum score multiplier for distance matching
+                                        # decrease to penalize poor distance matches more
+    use_response_expansion: true       # true = expand search if initial match is poor
+                                        # helps recover from bad initial estimates
+                                        # false = strict search only

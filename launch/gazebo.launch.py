@@ -1,6 +1,6 @@
 from launch import LaunchDescription
 from launch_ros.actions import Node
-from launch.actions import ExecuteProcess, TimerAction
+from launch.actions import ExecuteProcess, TimerAction, SetEnvironmentVariable
 from launch.substitutions import Command
 from launch_ros.parameter_descriptions import ParameterValue
 from ament_index_python.packages import get_package_share_directory
@@ -11,6 +11,21 @@ def generate_launch_description():
 
     pkg_path = get_package_share_directory('my_robot_description')
     world = os.path.join(pkg_path, 'worlds', 'my_saved_world.world')
+
+    # ================= GAZEBO MODEL PATH =================
+    # Tell Gazebo where to find the AWS warehouse models.
+    # This is set per-launch so it works without editing ~/.bashrc
+    # Add more paths with : separator if you have models elsewhere
+    gazebo_model_path = SetEnvironmentVariable(
+        name='GAZEBO_MODEL_PATH',
+        value=[
+            # AWS warehouse models
+            '/opt/ros/humble/share/aws_robomaker_small_warehouse_world/models',
+            # Add your own custom models folder if you have one:
+            # ':' + os.path.join(pkg_path, 'models'),
+        ]
+    )
+
 
     # ================= GAZEBO =================
     gazebo = ExecuteProcess(
@@ -68,6 +83,7 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
+        gazebo_model_path,   # ← must be first so Gazebo sees it on startup
         gazebo,
         robot_state_publisher,
         spawn,

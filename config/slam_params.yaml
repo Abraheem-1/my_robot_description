@@ -42,7 +42,7 @@ slam_toolbox:
     # Only used when mode: localization
     # Full path to saved map WITHOUT file extension
     # (.posegraph and .data files are loaded automatically)
-    map_file_name: /home/abraheem/ros2_ws/src/my_robot_description/maps/my_map
+    map_file_name: /home/abraheem/ros2_ws/src/my_robot_description/maps/my_warehouse_map
     map_start_at_dock: true        # true = start localization at map origin (0,0)
                                     # which matches where robot spawns in Gazebo
                                     # false = use initial pose from map file
